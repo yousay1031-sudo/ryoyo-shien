@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>タイムカード打刻</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: 'Noto Sans JP', sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; padding: 16px;
+}
+.card {
+  background: white; border-radius: 24px; padding: 28px 24px;
+  width: 100%; max-width: 480px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+}
+.card-title { font-size: 1.4rem; font-weight: 700; color: #2c3e50; text-align: center; margin-bottom: 4px; }
+.card-sub   { color: #888; font-size: 0.85rem; text-align: center; margin-bottom: 20px; }
+.back-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: none; border: none; color: #667eea;
+  font-size: 0.95rem; font-weight: 600; cursor: pointer; margin-bottom: 16px;
+}
+
+/* ホーム */
+#homeScreen .datetime {
+  font-size: 1rem; color: #555; text-align: center;
+  background: #f5f5f5; border-radius: 10px; padding: 10px; margin-bottom: 22px;
+}
+.home-btns { display: flex; flex-direction: column; gap: 14px; }
+.home-btn {
+  padding: 26px; border: none; border-radius: 18px;
+  font-size: 1.4rem; font-weight: 700; cursor: pointer; color: white;
+  transition: transform 0.15s; box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+}
+.home-btn:active { transform: scale(0.97); }
+.btn-ci { background: linear-gradient(135deg, #2e7d32, #4caf50); }
+.btn-co { background: linear-gradient(135deg, #c62828, #ef5350); }
+
+/* 利用者一覧 */
+#userListScreen { display: none; }
+.user-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  max-height: 58vh; overflow-y: auto;
+}
+.user-btn {
+  padding: 20px 8px; border: 2px solid #e0e0e0; border-radius: 16px;
+  background: white; font-size: 1.05rem; font-weight: 700; color: #2c3e50;
+  cursor: pointer; transition: all 0.12s; text-align: center;
+}
+.user-btn:active { background: #ede7f6; border-color: #667eea; }
+.user-btn.transport { border-color: #b3e5fc; background: #e1f5fe; }
+
+/* PIN */
+#pinScreen { display: none; text-align: center; }
+.pin-name {
+  font-size: 1.3rem; font-weight: 700; color: #2c3e50;
+  margin-bottom: 20px; padding: 10px 20px;
+  background: #f5f5f5; border-radius: 12px; display: inline-block;
+}
+.pin-dots { display: flex; justify-content: center; gap: 16px; margin-bottom: 28px; }
+.pin-dot {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid #ccc; background: white; transition: all 0.18s;
+}
+.pin-dot.filled { background: #667eea; border-color: #667eea; transform: scale(1.1); }
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.key {
+  padding: 20px; border: 2px solid #e8e8e8; border-radius: 16px;
+  background: white; font-size: 1.7rem; font-weight: 700;
+  color: #2c3e50; cursor: pointer; transition: all 0.1s;
+}
+.key:active { background: #667eea; color: white; border-color: #667eea; }
+.key-del   { font-size: 1.3rem; color: #888; }
+.key-enter { background: #667eea; color: white; border-color: #667eea; font-size: 0.95rem; }
+.key-enter:active { background: #5c6bc0; }
+.pin-error { color: #e74c3c; font-size: 0.85rem; margin-top: 14px; min-height: 20px; }
+
+/* 完了 */
+#doneScreen { display: none; text-align: center; }
+.done-icon { font-size: 5rem; margin-bottom: 16px; }
+.done-msg  { font-size: 1.4rem; font-weight: 700; color: #2c3e50; margin-bottom: 8px; }
+.done-time { font-size: 1.1rem; color: #555; margin-bottom: 28px; }
+.done-back { color: #888; font-size: 0.9rem; }
+.count     { font-size: 1.5rem; font-weight: 700; color: #667eea; }
+</style>
+</head>
+<body>
+
+<!-- ホーム -->
+<div class="card" id="homeScreen">
+  <div class="card-title">📋 タイムカード</div>
+  <div class="datetime" id="dtDisp">---</div>
+  <div class="home-btns">
+    <button class="home-btn btn-ci" onclick="startFlow('in')">✅　出　勤</button>
+    <button class="home-btn btn-co" onclick="startFlow('out')">🏁　退　勤</button>
+  </div>
+</div>
+
+<!-- 利用者一覧 -->
+<div class="card" id="userListScreen">
+  <button class="back-btn" onclick="goHome()">← 戻る</button>
+  <div class="card-title" id="listTitle"></div>
+  <div class="card-sub">名前をタップしてください</div>
+  <div class="user-grid" id="userGrid"></div>
+</div>
+
+<!-- PIN -->
+<div class="card" id="pinScreen">
+  <button class="back-btn" onclick="showList()">← 戻る</button>
+  <div class="card-title">パスワードを入力</div>
+  <div class="pin-name" id="pinName"></div>
+  <div class="pin-dots">
+    <div class="pin-dot" id="d0"></div><div class="pin-dot" id="d1"></div>
+    <div class="pin-dot" id="d2"></div><div class="pin-dot" id="d3"></div>
+  </div>
+  <div class="keypad">
+    <button class="key" onclick="kp('1')">1</button>
+    <button class="key" onclick="kp('2')">2</button>
+    <button class="key" onclick="kp('3')">3</button>
+    <button class="key" onclick="kp('4')">4</button>
+    <button class="key" onclick="kp('5')">5</button>
+    <button class="key" onclick="kp('6')">6</button>
+    <button class="key" onclick="kp('7')">7</button>
+    <button class="key" onclick="kp('8')">8</button>
+    <button class="key" onclick="kp('9')">9</button>
+    <button class="key key-del" onclick="kd()">⌫</button>
+    <button class="key" onclick="kp('0')">0</button>
+    <button class="key key-enter" onclick="ks()">決定</button>
+  </div>
+  <div class="pin-error" id="pinErr"></div>
+</div>
+
+<!-- 完了 -->
+<div class="card" id="doneScreen">
+  <div class="done-icon" id="doneIco"></div>
+  <div class="done-msg"  id="doneMsg"></div>
+  <div class="done-time" id="doneTm"></div>
+  <div class="done-back"><span class="count" id="cnt">5</span> 秒後にホームに戻ります</div>
+</div>
+
+<script>
+const SB='https://ntiapbggpzczmbnoiues.supabase.co', SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50aWFwYmdncHpjem1ibm9pdWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5MTAyMDcsImV4cCI6MjA5MDQ4NjIwN30.2u742yLu2YHh00zm3CLOLZ98GH8u0dpKunXNsuDvcu4';
+const H={'apikey':SK,'Authorization':'Bearer '+SK,'Content-Type':'application/json','Prefer':'return=representation'};
+let flow='',selUser=null,pin='',users=[],timer=null;
+
+function pad(n){return String(n).padStart(2,'0');}
+function todayStr(){const n=new Date();return`${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`;}
+function nowHM(){const n=new Date();return`${pad(n.getHours())}:${pad(n.getMinutes())}`;}
+
+// 時計
+(function tick(){
+  const n=new Date(),days=['日','月','火','水','木','金','土'];
+  document.getElementById('dtDisp').textContent=
+    `${n.getFullYear()}年${n.getMonth()+1}月${n.getDate()}日（${days[n.getDay()]}）　${pad(n.getHours())}:${pad(n.getMinutes())}`;
+  setTimeout(tick,15000);
+})();
+
+function show(id){
+  ['homeScreen','userListScreen','pinScreen','doneScreen'].forEach(s=>{
+    document.getElementById(s).style.display='none';
+  });
+  document.getElementById(id).style.display='block';
+}
+function goHome(){if(timer){clearInterval(timer);timer=null;}selUser=null;pin='';updateDots();show('homeScreen');}
+
+async function startFlow(f){
+  flow=f;
+  if(!users.length){
+    const r=await fetch(`${SB}/rest/v1/users?user_type=eq.user&status=eq.active&order=login_code`,{headers:H});
+    users=await r.json();
+  }
+  showList();
+}
+function showList(){
+  document.getElementById('listTitle').textContent=flow==='in'?'出勤する人を選んでください':'退勤する人を選んでください';
+  const g=document.getElementById('userGrid');
+  g.innerHTML='';
+  users.forEach(u=>{
+    const b=document.createElement('button');
+    b.className='user-btn'+(u.transport_type==='送迎'?' transport':'');
+    b.textContent=u.name;
+    b.onclick=()=>{selUser=u;pin='';updateDots();document.getElementById('pinName').textContent=u.name;document.getElementById('pinErr').textContent='';show('pinScreen');};
+    g.appendChild(b);
+  });
+  show('userListScreen');
+}
+
+function updateDots(){for(let i=0;i<4;i++)document.getElementById('d'+i).className='pin-dot'+(i<pin.length?' filled':'');}
+function kp(d){if(pin.length>=4)return;pin+=d;updateDots();if(pin.length===4)setTimeout(ks,150);}
+function kd(){pin=pin.slice(0,-1);updateDots();document.getElementById('pinErr').textContent='';}
+async function ks(){
+  if(pin.length<4){document.getElementById('pinErr').textContent='4桁入力してください';return;}
+  if(pin!==selUser.login_code){document.getElementById('pinErr').textContent='パスワードが違います';pin='';updateDots();return;}
+  await doClock();
+}
+
+async function doClock(){
+  const td=todayStr();
+  const r=await fetch(`${SB}/rest/v1/attendance?user_id=eq.${selUser.id}&date=eq.${td}&limit=1`,{headers:H});
+  const rows=await r.json();const att=rows[0];
+  if(flow==='in'){
+    if(att&&att.status==='working'){showDone('⚠️',`${selUser.name}さんは出勤済みです`,`${att.clock_in.substring(0,5)} に出勤済み`);return;}
+    if(att&&att.status==='completed'){showDone('⚠️','本日は退勤済みです','');return;}
+    const t=nowHM();
+    await fetch(`${SB}/rest/v1/attendance`,{method:'POST',headers:H,body:JSON.stringify({user_id:selUser.id,date:td,clock_in:t,break_minutes:60,work_hours:0,overtime_hours:0,status:'working',remarks:''})});
+    showDone('✅',`${selUser.name}さん、出勤しました`,`${t} に出勤打刻`);
+  }else{
+    if(!att||att.status!=='working'){showDone('⚠️','出勤打刻がありません','先に出勤打刻をしてください');return;}
+    const t=nowHM();let wh=0;
+    if(att.clock_in){const[ih,im]=att.clock_in.split(':').map(Number);const[oh,om]=t.split(':').map(Number);wh=Math.max(0,((oh*60+om)-(ih*60+im)-60)/60);}
+    await fetch(`${SB}/rest/v1/attendance?id=eq.${att.id}`,{method:'PATCH',headers:H,body:JSON.stringify({clock_out:t,work_hours:Math.round(wh*100)/100,status:'completed'})});
+    showDone('🏁',`${selUser.name}さん、退勤しました`,`${t} に退勤打刻`);
+  }
+}
+
+function showDone(ico,msg,tm){
+  document.getElementById('doneIco').textContent=ico;
+  document.getElementById('doneMsg').textContent=msg;
+  document.getElementById('doneTm').textContent=tm;
+  let c=5;document.getElementById('cnt').textContent=c;
+  show('doneScreen');
+  timer=setInterval(()=>{c--;document.getElementById('cnt').textContent=c;if(c<=0){clearInterval(timer);timer=null;goHome();}},1000);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>タイムカード - 指導員</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Noto Sans JP', sans-serif;
+  background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+  min-height: 100vh;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; padding: 20px;
+}
+.login-card {
+  background: white; border-radius: 20px; padding: 40px 32px;
+  width: 100%; max-width: 380px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center;
+}
+.login-card h1 { font-size: 1.5rem; font-weight: 700; color: #2c3e50; margin-bottom: 6px; }
+.login-card .sub { color: #888; font-size: 0.88rem; margin-bottom: 28px; }
+.login-select {
+  width: 100%; padding: 14px; border: 2px solid #e0e0e0; border-radius: 12px;
+  font-size: 1rem; color: #2c3e50; font-weight: 600; margin-bottom: 16px;
+  outline: none; background: white; cursor: pointer;
+}
+.login-select:focus { border-color: #2c3e50; }
+.btn-login {
+  width: 100%; padding: 16px;
+  background: linear-gradient(135deg, #2c3e50, #34495e);
+  color: white; border: none; border-radius: 12px;
+  font-size: 1.1rem; font-weight: 700; cursor: pointer;
+}
+.login-error { color: #e74c3c; font-size: 0.85rem; margin-top: 10px; display: none; }
+
+.main-screen { display: none; width: 100%; max-width: 420px; }
+.user-header {
+  background: white; border-radius: 20px; padding: 18px 22px; margin-bottom: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.user-name { font-size: 1.3rem; font-weight: 700; color: #2c3e50; }
+.role-badge {
+  padding: 6px 14px; border-radius: 20px; font-size: 0.82rem;
+  font-weight: 700; color: white; background: #2c3e50;
+}
+
+.clock-card {
+  background: white; border-radius: 20px; padding: 20px;
+  margin-bottom: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); text-align: center;
+}
+.now-time { font-size: 3.2rem; font-weight: 700; color: #2c3e50; line-height: 1; }
+.now-date { font-size: 0.88rem; color: #888; margin-top: 4px; }
+
+.status-card {
+  background: white; border-radius: 20px; padding: 16px 20px;
+  margin-bottom: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.status-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 7px 0; border-bottom: 1px solid #f5f5f5; font-size: 0.92rem;
+}
+.status-row:last-child { border-bottom: none; }
+.status-label { color: #888; }
+.status-value { font-weight: 700; color: #2c3e50; }
+.working-status { color: #2e7d32 !important; }
+
+.location-card {
+  background: rgba(255,255,255,0.1); border-radius: 14px; padding: 12px 16px;
+  margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.2);
+}
+.location-text { color: rgba(255,255,255,0.8); font-size: 0.82rem; }
+.location-val { color: white; font-size: 0.88rem; font-weight: 600; margin-top: 4px; }
+
+.btn-clockin, .btn-clockout {
+  width: 100%; padding: 22px; border: none; border-radius: 16px;
+  font-size: 1.3rem; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  transition: all 0.2s; box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  margin-bottom: 10px; color: white;
+}
+.btn-clockin { background: linear-gradient(135deg, #1b5e20, #388e3c); }
+.btn-clockout { background: linear-gradient(135deg, #b71c1c, #e53935); }
+.btn-clockin:active, .btn-clockout:active { transform: scale(0.97); }
+.btn-clockin:disabled, .btn-clockout:disabled {
+  background: rgba(255,255,255,0.2); color: rgba(255,255,255,0.4);
+  box-shadow: none; cursor: not-allowed;
+}
+.btn-logout {
+  width: 100%; padding: 14px;
+  background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7);
+  border: 1px solid rgba(255,255,255,0.25); border-radius: 12px;
+  font-size: 0.9rem; cursor: pointer;
+}
+
+.toast {
+  position: fixed; bottom: 30px; left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: #2c3e50; color: white; padding: 14px 24px;
+  border-radius: 12px; font-size: 0.95rem; font-weight: 600;
+  transition: transform 0.3s; z-index: 200; white-space: nowrap;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.success { background: #1b5e20; }
+.toast.error   { background: #b71c1c; }
+</style>
+</head>
+<body>
+
+<!-- ログイン -->
+<div class="login-card" id="loginScreen">
+  <h1>🏢 指導員タイムカード</h1>
+  <p class="sub">指導員を選択してください</p>
+  <select class="login-select" id="managerSelect">
+    <option value="">-- 選択してください --</option>
+  </select>
+  <button class="btn-login" onclick="doLogin()">
+    <i class="fas fa-sign-in-alt"></i> ログイン
+  </button>
+  <p class="login-error" id="loginError">選択してください</p>
+</div>
+
+<!-- メイン -->
+<div class="main-screen" id="mainScreen">
+  <div class="user-header">
+    <div class="user-name" id="mName">--</div>
+    <div class="role-badge">指導員</div>
+  </div>
+  <div class="clock-card">
+    <div class="now-time" id="nowTime">--:--:--</div>
+    <div class="now-date" id="nowDate">----年--月--日</div>
+  </div>
+  <div class="location-card">
+    <div class="location-text"><i class="fas fa-map-marker-alt"></i> 現在地</div>
+    <div class="location-val" id="locationText">位置情報を取得中...</div>
+  </div>
+  <div class="status-card">
+    <div class="status-row">
+      <span class="status-label">出勤</span>
+      <span class="status-value" id="sClockIn">--</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">退勤</span>
+      <span class="status-value" id="sClockOut">--</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">状態</span>
+      <span class="status-value" id="sStatus">--</span>
+    </div>
+  </div>
+  <button class="btn-clockin"  id="btnIn"  onclick="clockIn()"><i class="fas fa-sign-in-alt"></i> 出勤</button>
+  <button class="btn-clockout" id="btnOut" onclick="clockOut()"><i class="fas fa-sign-out-alt"></i> 退勤</button>
+  <button class="btn-logout" onclick="doLogout()"><i class="fas fa-door-open"></i> ログアウト</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL = 'https://ntiapbggpzczmbnoiues.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50aWFwYmdncHpjem1ibm9pdWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5MTAyMDcsImV4cCI6MjA5MDQ4NjIwN30.2u742yLu2YHh00zm3CLOLZ98GH8u0dpKunXNsuDvcu4';
+const SB_H = {
+  'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`,
+  'Content-Type': 'application/json', 'Prefer': 'return=representation'
+};
+
+let cUser = null, cAtt = null, clockTimer = null;
+let currentLat = null, currentLon = null;
+
+// 位置情報取得
+function getLocation() {
+  if (!navigator.geolocation) {
+    document.getElementById('locationText').textContent = '位置情報非対応';
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      currentLat = pos.coords.latitude;
+      currentLon = pos.coords.longitude;
+      document.getElementById('locationText').textContent =
+        `緯度 ${currentLat.toFixed(5)} / 経度 ${currentLon.toFixed(5)}`;
+    },
+    err => {
+      document.getElementById('locationText').textContent = '位置情報を取得できませんでした';
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+// 指導員リスト読み込み
+async function loadManagers() {
+  const res = await fetch(`${SB_URL}/rest/v1/users?user_type=eq.manager&status=eq.active&order=id`, { headers: SB_H });
+  const rows = await res.json();
+  const sel = document.getElementById('managerSelect');
+  rows.filter(u => !u.is_admin).forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.id; opt.textContent = u.name;
+    sel.appendChild(opt);
+  });
+}
+
+function pad(n) { return String(n).padStart(2,'0'); }
+function today() {
+  const n = new Date();
+  return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`;
+}
+function nowHM() { const n = new Date(); return `${pad(n.getHours())}:${pad(n.getMinutes())}`; }
+
+function startClock() {
+  const tick = () => {
+    const n = new Date();
+    document.getElementById('nowTime').textContent =
+      `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
+    const days=['日','月','火','水','木','金','土'];
+    document.getElementById('nowDate').textContent =
+      `${n.getFullYear()}年${n.getMonth()+1}月${n.getDate()}日（${days[n.getDay()]}）`;
+  };
+  tick(); clockTimer = setInterval(tick, 1000);
+}
+
+async function doLogin() {
+  const selId = document.getElementById('managerSelect').value;
+  if (!selId) { document.getElementById('loginError').style.display = 'block'; return; }
+  document.getElementById('loginError').style.display = 'none';
+  const res = await fetch(`${SB_URL}/rest/v1/users?id=eq.${selId}&limit=1`, { headers: SB_H });
+  const rows = await res.json();
+  cUser = rows[0];
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('mainScreen').style.display = 'block';
+  document.getElementById('mName').textContent = cUser.name;
+  startClock();
+  getLocation();
+  await loadToday();
+}
+
+async function loadToday() {
+  const td = today();
+  const res = await fetch(`${SB_URL}/rest/v1/attendance?user_id=eq.${cUser.id}&date=eq.${td}&limit=1`, { headers: SB_H });
+  const rows = await res.json();
+  cAtt = rows[0] || null;
+  updateUI();
+}
+
+function updateUI() {
+  const btnIn = document.getElementById('btnIn');
+  const btnOut = document.getElementById('btnOut');
+  if (!cAtt) {
+    document.getElementById('sClockIn').textContent  = '--';
+    document.getElementById('sClockOut').textContent = '--';
+    document.getElementById('sStatus').textContent   = '未出勤';
+    document.getElementById('sStatus').className     = 'status-value';
+    btnIn.disabled = false; btnOut.disabled = true;
+  } else if (cAtt.status === 'working') {
+    document.getElementById('sClockIn').textContent  = cAtt.clock_in ? cAtt.clock_in.substring(0,5) : '--';
+    document.getElementById('sClockOut').textContent = '--';
+    document.getElementById('sStatus').textContent   = '出勤中';
+    document.getElementById('sStatus').className     = 'status-value working-status';
+    btnIn.disabled = true; btnOut.disabled = false;
+  } else {
+    document.getElementById('sClockIn').textContent  = cAtt.clock_in  ? cAtt.clock_in.substring(0,5)  : '--';
+    document.getElementById('sClockOut').textContent = cAtt.clock_out ? cAtt.clock_out.substring(0,5) : '--';
+    document.getElementById('sStatus').textContent   = '退勤済み';
+    document.getElementById('sStatus').className     = 'status-value';
+    btnIn.disabled = true; btnOut.disabled = true;
+  }
+}
+
+async function clockIn() {
+  document.getElementById('btnIn').disabled = true;
+  // 位置情報を再取得
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(async pos => {
+      currentLat = pos.coords.latitude;
+      currentLon = pos.coords.longitude;
+      await doClockIn();
+    }, async () => { await doClockIn(); }, { timeout: 5000 });
+  } else { await doClockIn(); }
+}
+
+async function doClockIn() {
+  const t = nowHM();
+  try {
+    const res = await fetch(`${SB_URL}/rest/v1/attendance`, {
+      method: 'POST', headers: SB_H,
+      body: JSON.stringify({
+        user_id: cUser.id, date: today(), clock_in: t,
+        clock_out: null, break_minutes: 60, work_hours: 0,
+        overtime_hours: 0, status: 'working', remarks: '',
+        latitude: currentLat, longitude: currentLon
+      })
+    });
+    const rows = await res.json();
+    cAtt = Array.isArray(rows) ? rows[0] : rows;
+    updateUI();
+    const loc = currentLat ? `（${currentLat.toFixed(4)}, ${currentLon.toFixed(4)}）` : '';
+    showToast(`${t} 出勤${loc}`, 'success');
+  } catch(e) {
+    document.getElementById('btnIn').disabled = false;
+    showToast('出勤処理に失敗しました', 'error');
+  }
+}
+
+async function clockOut() {
+  if (!cAtt) return;
+  document.getElementById('btnOut').disabled = true;
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(async pos => {
+      currentLat = pos.coords.latitude; currentLon = pos.coords.longitude;
+      await doClockOut();
+    }, async () => { await doClockOut(); }, { timeout: 5000 });
+  } else { await doClockOut(); }
+}
+
+async function doClockOut() {
+  const t = nowHM();
+  let wh = 0;
+  if (cAtt.clock_in) {
+    const [ih,im] = cAtt.clock_in.split(':').map(Number);
+    const [oh,om] = t.split(':').map(Number);
+    wh = Math.max(0, ((oh*60+om)-(ih*60+im)-(cAtt.break_minutes||60))/60);
+  }
+  try {
+    await fetch(`${SB_URL}/rest/v1/attendance?id=eq.${cAtt.id}`, {
+      method: 'PATCH', headers: SB_H,
+      body: JSON.stringify({
+        clock_out: t, work_hours: Math.round(wh*100)/100, status: 'completed',
+        latitude: currentLat, longitude: currentLon
+      })
+    });
+    cAtt.clock_out = t; cAtt.status = 'completed';
+    updateUI();
+    showToast(`${t} 退勤しました`, 'success');
+  } catch(e) {
+    document.getElementById('btnOut').disabled = false;
+    showToast('退勤処理に失敗しました', 'error');
+  }
+}
+
+function doLogout() {
+  cUser = null; cAtt = null;
+  if (clockTimer) clearInterval(clockTimer);
+  document.getElementById('mainScreen').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'block';
+}
+
+function showToast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = `toast ${type} show`;
+  setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// 起動時に指導員リスト読み込み
+loadManagers();
+</script>
+</body>
+</html>
