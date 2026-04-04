@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>利用者メニュー</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Noto Sans JP', sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 32px 20px;
+}
+h1 {
+  color: white; font-size: 1.5rem; font-weight: 700;
+  margin-bottom: 8px; text-align: center;
+}
+.sub { color: rgba(255,255,255,0.75); font-size: 0.88rem; margin-bottom: 36px; text-align: center; }
+
+.cards { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 360px; }
+
+.card {
+  background: white; border-radius: 20px;
+  text-decoration: none; color: #2c3e50;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  transition: transform 0.18s, box-shadow 0.18s;
+  overflow: hidden;
+  display: block;
+}
+.card:active { transform: scale(0.97); }
+
+.card-inner {
+  display: flex; align-items: center; gap: 20px; padding: 24px 22px;
+}
+
+.card-icon {
+  width: 64px; height: 64px; border-radius: 18px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2rem;
+}
+.ic-green  { background: linear-gradient(135deg, #2e7d32, #4caf50); }
+.ic-blue   { background: linear-gradient(135deg, #1565c0, #1976d2); }
+
+.card-text h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 4px; }
+.card-text p  { font-size: 0.82rem; color: #888; line-height: 1.4; }
+</style>
+</head>
+<body>
+<h1>ライドオン！！タイムカード</h1>
+<p class="sub">使う画面を選んでください</p>
+<div class="cards">
+  <a href="timecard.html" class="card">
+    <div class="card-inner">
+      <div class="card-icon ic-green">🕐</div>
+      <div class="card-text">
+        <h2>タイムカード打刻</h2>
+        <p>出勤・退勤の打刻を行います</p>
+      </div>
+    </div>
+  </a>
+  <a href="report.html" class="card">
+    <div class="card-inner">
+      <div class="card-icon ic-blue">📝</div>
+      <div class="card-text">
+        <h2>日報入力</h2>
+        <p>業務内容・体調を記録します</p>
+      </div>
+    </div>
+  </a>
+</div>
+</body>
+</html>
