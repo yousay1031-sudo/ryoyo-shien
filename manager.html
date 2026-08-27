@@ -5285,11 +5285,26 @@ window.fetch = async function(url, opts = {}) {
     const headers = {'apikey': SUPABASE_KEY,'Authorization': `Bearer ${SUPABASE_KEY}`,'Content-Type': 'application/json','Prefer': 'return=representation'};
     try {
         if (method === 'GET') {
-            const endpoint = id ? `${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}&limit=1` : `${SUPABASE_URL}/rest/v1/${table}?limit=9999&order=id`;
-            const res = await _origFetch(endpoint, {headers});
-            const rows = await res.json();
-            if (id) return {ok:true,status:200,json:async()=>rows[0]||{}};
-            return {ok:true,status:200,json:async()=>({data:rows})};
+            if (id) {
+                const endpoint = `${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}&limit=1`;
+                const res = await _origFetch(endpoint, {headers});
+                const rows = await res.json();
+                return {ok:true,status:200,json:async()=>rows[0]||{}};
+            }
+            // ページネーションで全件取得（Supabaseの1000件制限を回避）
+            const PAGE = 1000;
+            let allRows = [], offset = 0, done = false;
+            const queryStr = url.includes('?') ? '&' + url.split('?')[1] : '';
+            while (!done) {
+                const endpoint = `${SUPABASE_URL}/rest/v1/${table}?order=id&limit=${PAGE}&offset=${offset}${queryStr}`;
+                const res = await _origFetch(endpoint, {headers: {...headers, 'Prefer': 'count=none'}});
+                const rows = await res.json();
+                if (!Array.isArray(rows) || rows.length === 0) { done = true; break; }
+                allRows = allRows.concat(rows);
+                if (rows.length < PAGE) { done = true; } else { offset += PAGE; }
+                if (offset > 20000) break; // 安全上限
+            }
+            return {ok:true,status:200,json:async()=>({data:allRows})};
         }
         if (method === 'POST') {
             const res = await _origFetch(`${SUPABASE_URL}/rest/v1/${table}`,{method:'POST',headers,body:JSON.stringify(body)});
