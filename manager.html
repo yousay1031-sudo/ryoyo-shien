@@ -5654,7 +5654,7 @@ async function loadManagerShiftTable() {
         _cachedManagers = null; // キャッシュリセット
         const [managers, shiftsRes] = await Promise.all([
             getManagerUsers(),
-            fetch('tables/manager_shifts?limit=1000').then(r => r.json())
+            fetch('tables/manager_shifts?limit=9999').then(r => r.json())
         ]);
         const monthShifts = shiftsRes.data.filter(s => s.date.startsWith(monthStr));
         renderManagerShiftTable(year, month, managers, monthShifts);
@@ -5895,9 +5895,9 @@ async function loadAllShiftTable() {
     try {
         const [usersRes, userShiftsRes, managerShiftsRes, leavesRes] = await Promise.all([
             fetch('tables/users?limit=100'),
-            fetch('tables/shifts?limit=1000'),
-            fetch('tables/manager_shifts?limit=1000'),
-            fetch('tables/leave_requests?limit=1000')
+            fetch('tables/shifts?limit=9999'),
+            fetch('tables/manager_shifts?limit=9999'),
+            fetch('tables/leave_requests?limit=9999')
         ]);
         const users = await usersRes.json();
         const userShifts = await userShiftsRes.json();
@@ -6624,7 +6624,7 @@ async function loadDashboard() {
             fetch('tables/users?limit=100'),
             fetch('tables/attendance?limit=1000'),
             fetch('tables/daily_reports?limit=1000'),
-            fetch('tables/shifts?limit=1000')
+            fetch('tables/shifts?limit=9999')
         ]);
         
         const users = await usersRes.json();
@@ -6987,8 +6987,8 @@ async function renderShiftTable() {
     try {
         const [usersRes, shiftsRes, leavesRes] = await Promise.all([
             fetch('tables/users?limit=100'),
-            fetch('tables/shifts?limit=1000'),
-            fetch('tables/leave_requests?limit=1000')
+            fetch('tables/shifts?limit=9999'),
+            fetch('tables/leave_requests?limit=9999')
         ]);
         
         const users = await usersRes.json();
@@ -7332,8 +7332,8 @@ async function generateShifts() {
     try {
         const [usersRes, leaveRes, shiftsRes] = await Promise.all([
             fetch('tables/users?limit=100'),
-            fetch('tables/leave_requests?limit=1000'),
-            fetch('tables/shifts?limit=1000')
+            fetch('tables/leave_requests?limit=9999'),
+            fetch('tables/shifts?limit=9999')
         ]);
         
         const users = await usersRes.json();
@@ -7432,7 +7432,7 @@ async function loadLeaveAll() {
 
     const [usersRes, leavesRes] = await Promise.all([
         fetch('tables/users?limit=100'),
-        fetch('tables/leave_requests?limit=1000')
+        fetch('tables/leave_requests?limit=9999')
     ]);
     const usersData = await usersRes.json();
     const leavesData = await leavesRes.json();
@@ -7637,8 +7637,8 @@ async function loadAttendancePage() {
         const [usersRes, attRes, shiftsRes, leavesRes] = await Promise.all([
             fetch('tables/users?limit=100'),
             fetch('tables/attendance?limit=10000'),
-            fetch('tables/shifts?limit=10000'),
-            fetch('tables/leave_requests?limit=10000')
+            fetch('tables/shifts?limit=99990'),
+            fetch('tables/leave_requests?limit=99990')
         ]);
         const users  = await usersRes.json();
         const atts   = await attRes.json();
@@ -7785,8 +7785,8 @@ async function calculateSalary() {
         const [usersRes, attendanceRes, shiftsRes, leaveRes] = await Promise.all([
             fetch('tables/users?limit=100'),
             fetch('tables/attendance?limit=10000'),
-            fetch('tables/shifts?limit=10000'),
-            fetch('tables/leave_requests?limit=10000')
+            fetch('tables/shifts?limit=99990'),
+            fetch('tables/leave_requests?limit=99990')
         ]);
 
         const users      = await usersRes.json();
@@ -8492,7 +8492,7 @@ async function refreshSummaryCells() {
 
         // シフトと利用者を取得
         const [shiftsRes, usersRes] = await Promise.all([
-            fetch('tables/shifts?limit=1000'),
+            fetch('tables/shifts?limit=9999'),
             fetch('tables/users?limit=100')
         ]);
         const monthShifts = (await shiftsRes.json()).data.filter(s => s.date.startsWith(yearMonth));
@@ -8647,8 +8647,8 @@ async function printShiftTableMobile() {
         // データ取得
         const [users, shifts, leaves] = await Promise.all([
             fetch('tables/users?limit=100').then(r => r.json()),
-            fetch('tables/shifts?limit=1000').then(r => r.json()),
-            fetch('tables/leave_requests?limit=1000').then(r => r.json())
+            fetch('tables/shifts?limit=9999').then(r => r.json()),
+            fetch('tables/leave_requests?limit=9999').then(r => r.json())
         ]);
         
         const activeUsers = users.data
@@ -8865,10 +8865,10 @@ async function backupAllData() {
         // 全テーブルのデータを取得
         const [usersRes, shiftsRes, attendanceRes, reportsRes, leavesRes, logsRes] = await Promise.all([
             fetch('tables/users?limit=10000'),
-            fetch('tables/shifts?limit=10000'),
+            fetch('tables/shifts?limit=99990'),
             fetch('tables/attendance?limit=10000'),
             fetch('tables/daily_reports?limit=10000'),
-            fetch('tables/leave_requests?limit=10000'),
+            fetch('tables/leave_requests?limit=99990'),
             fetch('tables/attendance_logs?limit=10000')
         ]);
         
@@ -9004,10 +9004,10 @@ async function executeRestore() {
         // 既存データの取得と削除
         const [usersRes, shiftsRes, attendanceRes, reportsRes, leavesRes, logsRes] = await Promise.all([
             fetch('tables/users?limit=10000'),
-            fetch('tables/shifts?limit=10000'),
+            fetch('tables/shifts?limit=99990'),
             fetch('tables/attendance?limit=10000'),
             fetch('tables/daily_reports?limit=10000'),
-            fetch('tables/leave_requests?limit=10000'),
+            fetch('tables/leave_requests?limit=99990'),
             fetch('tables/attendance_logs?limit=10000')
         ]);
         
@@ -9343,7 +9343,7 @@ async function loadDashboardShiftPreview() {
     
     try {
         const [shiftsRes, usersRes] = await Promise.all([
-            fetch('tables/shifts?limit=1000'),
+            fetch('tables/shifts?limit=9999'),
             fetch('tables/users?limit=100')
         ]);
         
@@ -9400,7 +9400,7 @@ async function autoGenerateFromDashboard() {
 
     // 既存シフトの有無を確認
     const yearMonth = targetMonth;
-    const existingRes = await fetch('tables/shifts?limit=1000');
+    const existingRes = await fetch('tables/shifts?limit=9999');
     const existingData = await existingRes.json();
     const existingCount = existingData.data.filter(s => s.date.startsWith(yearMonth)).length;
 
@@ -9988,7 +9988,7 @@ async function loadShiftCreationPreview() {
     
     try {
         const [shiftsRes, usersRes] = await Promise.all([
-            fetch('tables/shifts?limit=1000'),
+            fetch('tables/shifts?limit=9999'),
             fetch('tables/users?limit=100')
         ]);
         
@@ -10047,7 +10047,7 @@ async function autoGenerateFromShiftCreation() {
 
     // 既存シフトの有無を確認
     const yearMonth = targetMonth;
-    const existingRes = await fetch('tables/shifts?limit=1000');
+    const existingRes = await fetch('tables/shifts?limit=9999');
     const existingData = await existingRes.json();
     const existingCount = existingData.data.filter(s => s.date.startsWith(yearMonth)).length;
 
