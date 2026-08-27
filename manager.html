@@ -5331,21 +5331,29 @@ async function autoGenerateShiftsV2(targetMonth) {
     generationWarnings = [];
 
     try {
+        const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
+
         const [usersRes, leaveRes, shiftsRes] = await Promise.all([
-            fetch('tables/users?limit=100'),
-            fetch('tables/leave_requests?limit=1000'),
-            fetch('tables/shifts?limit=1000')
+            fetch('tables/users?limit=500'),
+            fetch(`tables/leave_requests?limit=2000`),
+            fetch(`tables/shifts?limit=2000`)
         ]);
         const users    = await usersRes.json();
         const leaves   = await leaveRes.json();
         const existing = await shiftsRes.json();
 
         const activeUsers = users.data.filter(u => u.user_type === 'user' && u.status === 'active');
-        const yearMonth   = `${year}-${String(month).padStart(2, '0')}`;
 
-        // 既存シフト削除
-        for (const s of existing.data.filter(s => s.date.startsWith(yearMonth))) {
-            await fetch(`tables/shifts/${s.id}`, { method: 'DELETE' });
+        // 既存シフト削除（対象月のみ、並列処理）
+        const toDelete = existing.data.filter(s => s.date && s.date.startsWith(yearMonth));
+        if (toDelete.length > 0) {
+            const deleteChunks = [];
+            for (let i = 0; i < toDelete.length; i += 10) {
+                deleteChunks.push(toDelete.slice(i, i + 10));
+            }
+            for (const chunk of deleteChunks) {
+                await Promise.all(chunk.map(s => fetch(`tables/shifts/${s.id}`, { method: 'DELETE' })));
+            }
         }
 
         // 営業日リスト（火曜除外）
@@ -5422,25 +5430,31 @@ async function autoGenerateShiftsV2(targetMonth) {
             for (const u of assignedB) storeCount[u.id].B++;
         }
 
-        // 保存
+        // 保存（並列処理で高速化）
         let total = 0;
+        const allShiftsToSave = [];
         for (const dateStr in dailyShifts) {
             for (const u of dailyShifts[dateStr].A) {
-                await fetch('tables/shifts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: u.id, date: dateStr, store: 'A', status: 'scheduled' })
-                });
-                total++;
+                allShiftsToSave.push({ user_id: u.id, date: dateStr, store: 'A', status: 'scheduled' });
             }
             for (const u of dailyShifts[dateStr].B) {
-                await fetch('tables/shifts', {
+                allShiftsToSave.push({ user_id: u.id, date: dateStr, store: 'B', status: 'scheduled' });
+            }
+        }
+        // 10件ずつ並列保存
+        const saveChunks = [];
+        for (let i = 0; i < allShiftsToSave.length; i += 10) {
+            saveChunks.push(allShiftsToSave.slice(i, i + 10));
+        }
+        for (const chunk of saveChunks) {
+            await Promise.all(chunk.map(shift =>
+                fetch('tables/shifts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: u.id, date: dateStr, store: 'B', status: 'scheduled' })
-                });
-                total++;
-            }
+                    body: JSON.stringify(shift)
+                })
+            ));
+            total += chunk.length;
         }
 
         let message = `シフトを自動生成しました（${total}件）`;
@@ -8790,8 +8804,8 @@ async function resetShifts() {
         const month = date.getMonth() + 1;
         const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
         
-        // 対象月のシフトを取得
-        const shiftsRes = await fetch('tables/shifts?limit=1000');
+        // 対象月のシフトを取得（limit大きめ）
+        const shiftsRes = await fetch('tables/shifts?limit=5000');
         const shiftsData = await shiftsRes.json();
         
         // 対象月のシフトをフィルタ
@@ -8808,13 +8822,12 @@ async function resetShifts() {
             return;
         }
         
-        // 削除処理
+        // 削除処理（10件ずつ並列）
         let deletedCount = 0;
-        for (const shift of targetShifts) {
-            await fetch(`tables/shifts/${shift.id}`, {
-                method: 'DELETE'
-            });
-            deletedCount++;
+        for (let i = 0; i < targetShifts.length; i += 10) {
+            const chunk = targetShifts.slice(i, i + 10);
+            await Promise.all(chunk.map(shift => fetch(`tables/shifts/${shift.id}`, { method: 'DELETE' })));
+            deletedCount += chunk.length;
         }
         
         showToast(`${year}年${month}月のシフト ${deletedCount}件を削除しました`, 'info');
