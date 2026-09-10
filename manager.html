@@ -1661,7 +1661,12 @@ body {
     }
 
     .shift-cell.off {
-        background: #ffffff !important;
+        background: #ffeb3b !important;
+        color: #d32f2f !important;
+        font-size: 9px !important;
+        font-weight: bold !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
         border-radius: 0;
     }
 
@@ -7082,7 +7087,7 @@ async function renderShiftTable() {
                         cellText = '有給';
                     } else {
                         cellClass = 'off';
-                        cellText = '';
+                        cellText = '休';
                     }
                 } else {
                     cellClass = 'off';
