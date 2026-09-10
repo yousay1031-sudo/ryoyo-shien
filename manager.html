@@ -1425,13 +1425,13 @@ body {
 @media print {
     @page {
         size: A4 landscape;
-        margin: 6mm 5mm 6mm 5mm;
+        margin: 4mm 4mm 4mm 4mm;
     }
 
     html, body {
-        width: 297mm;
-        height: 209mm;
-        max-height: 209mm;
+        width: 289mm;
+        height: 202mm;
+        max-height: 202mm;
         overflow: hidden;
     }
 
@@ -1722,12 +1722,12 @@ body {
 
     /* ===== 印刷フッター ===== */
     .print-footer {
-        margin-top: 3px;
+        margin-top: 2px;
         page-break-inside: avoid;
         page-break-before: avoid;
         break-before: avoid;
         border-top: 1px solid #ccc;
-        padding-top: 3px;
+        padding-top: 2px;
         overflow: hidden;
     }
 
@@ -1766,11 +1766,12 @@ body {
         display: flex !important;
         align-items: center;
         justify-content: center;
-        margin-bottom: 2px;
+        margin-bottom: 1px;
         gap: 4px;
     }
 
     .notice-text { font-size: 18px; }
+    .footer-sub-text { font-size: 18px !important; }
 
     .notice-time {
         font-size: 13px;
