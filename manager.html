@@ -1430,7 +1430,9 @@ body {
 
     html, body {
         width: 297mm;
-        height: 210mm;
+        height: 209mm;
+        max-height: 209mm;
+        overflow: hidden;
     }
 
     body * { visibility: hidden; }
@@ -1655,6 +1657,13 @@ body {
         border-radius: 0;
     }
 
+    /* 有給・休みテキストを大きく */
+    .shift-cell.paid-leave,
+    .shift-cell.off {
+        font-size: 11px !important;
+        font-weight: bold !important;
+    }
+
     .shift-table td:has(.shift-cell.holiday) {
         background: #e0e0e0 !important;
         padding: 0 !important;
@@ -1665,7 +1674,7 @@ body {
     .shift-cell.off {
         background: #ffeb3b !important;
         color: #d32f2f !important;
-        font-size: 9px !important;
+        font-size: 11px !important;
         font-weight: bold !important;
         print-color-adjust: exact;
         -webkit-print-color-adjust: exact;
@@ -1750,7 +1759,7 @@ body {
     .print-legend-box.legend-a    { background: transparent !important; border: 1px solid #999 !important; }
     .print-legend-box.legend-b    { background: #1976d2 !important; }
     .print-legend-box.legend-paid { background: #ffeb3b !important; border: 1px solid #999 !important; }
-    .print-legend-box.legend-off  { background: #ffffff !important; border: 0.5px solid #999; }
+    .print-legend-box.legend-off  { background: #ffeb3b !important; border: 0.5px solid #999; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     .print-legend-box.legend-tue  { background: #e0e0e0 !important; }
 
     .footer-notice {
