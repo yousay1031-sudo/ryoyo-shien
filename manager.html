@@ -1452,9 +1452,11 @@ body {
         left: 0;
         top: 0;
         width: 100%;
+        max-height: 100vh;
         padding: 0;
         box-shadow: none;
         border-radius: 0;
+        overflow: hidden;
     }
 
     /* ===== テーブル全体 ===== */
@@ -1711,10 +1713,13 @@ body {
 
     /* ===== 印刷フッター ===== */
     .print-footer {
-        margin-top: 5px;
+        margin-top: 3px;
         page-break-inside: avoid;
+        page-break-before: avoid;
+        break-before: avoid;
         border-top: 1px solid #ccc;
-        padding-top: 4px;
+        padding-top: 3px;
+        overflow: hidden;
     }
 
     /* 凡例 */
@@ -1752,7 +1757,7 @@ body {
         display: flex !important;
         align-items: center;
         justify-content: center;
-        margin-bottom: 3px;
+        margin-bottom: 2px;
         gap: 4px;
     }
 
