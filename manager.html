@@ -5359,7 +5359,7 @@ window.fetch = async function(url, opts = {}) {
 //
 // v5の改善点:
 // 1. 固定店舗100%の利用者は「ロック」し、以降の調整で絶対に動かさない
-// 2. 日ごとの目標人数を「固定分を除いた残り」で6:4に計算
+// 2. 全体で5:5（余りは帯広、札内は帯広を超えない）。送迎上限で札内が足りない分は帯広へ
 // 3. 各利用者の月内帯広率を目標に近づける（偏り防止）
 // 4. 連日同じ店舗が続きすぎないよう前日の店舗も考慮
 // 5. 複数回試行し、月全体のバランススコアが最も良い案を採用
@@ -5474,7 +5474,7 @@ function buildMonthPlan(activeUsers, workDates, leaveSet) {
         const flex = Number(u.fixed_store_flexibility ?? 70);
         if (u.fixed_store === 'A')       { targetARate[u.id] = flex / 100;     isLocked[u.id] = flex >= 100; }
         else if (u.fixed_store === 'B')  { targetARate[u.id] = 1 - flex / 100; isLocked[u.id] = flex >= 100; }
-        else                             { targetARate[u.id] = 0.6;            isLocked[u.id] = false; }
+        else                             { targetARate[u.id] = 0.5;            isLocked[u.id] = false; }
     }
 
     for (const dateStr of workDates) {
@@ -5493,11 +5493,22 @@ function buildMonthPlan(activeUsers, workDates, leaveSet) {
             }
         }
 
-        // ---- Step2: 残りの人数を目標比率で決める ----
+        // ---- Step2: 送迎上限を守れる範囲で札内の人数を決める（余りは帯広）----
         const free = todayWorkers.filter(u => !lockedIds.has(u.id));
-        const totalA = Math.round(todayWorkers.length * 0.6);
-        let needA = Math.max(0, totalA - assignedA.length);
-        needA = Math.min(needA, free.length);
+        // 札内に入れられる自由な人の上限 = 送迎(4-固定分) + 自車(2-固定分) + 自走は無制限
+        const lockedTrB = assignedB.filter(u => u.transport_type === '送迎').length;
+        const lockedOcB = assignedB.filter(u => u.transport_type === '自車').length;
+        const trCap = Math.max(0, 4 - lockedTrB);
+        const ocCap = Math.max(0, 2 - lockedOcB);
+        const freeTr = free.filter(u => u.transport_type === '送迎').length;
+        const freeOc = free.filter(u => u.transport_type === '自車').length;
+        const freeWalk = free.length - freeTr - freeOc;
+        const maxB = Math.min(freeTr, trCap) + Math.min(freeOc, ocCap) + freeWalk;
+        // 固定を含めた全体で5:5（余りは帯広）→ 札内の目標 = floor(全体/2) - 固定札内
+        const totalToday = todayWorkers.length;
+        const idealB = Math.max(0, Math.floor(totalToday / 2) - assignedB.length);
+        const needB = Math.min(idealB, maxB);
+        const needA = free.length - needB;
 
         // ---- Step3: 各人の「帯広に行くべき度」スコア ----
         const scored = free.map(u => {
@@ -5515,8 +5526,49 @@ function buildMonthPlan(activeUsers, workDates, leaveSet) {
         });
         scored.sort((a, b) => b.score - a.score);
 
-        assignedA.push(...scored.slice(0, needA).map(x => x.user));
-        assignedB.push(...scored.slice(needA).map(x => x.user));
+        // 札内側は「札内に行くべき度」が高い順（scoreが低い順）に、
+        // 送迎・自車枠とAグループ均等を守りながら選ぶ
+        const isGA = u => u.management_group === 'A';
+        const lockedGA_A = assignedA.filter(isGA).length;
+        const lockedGA_B = assignedB.filter(isGA).length;
+        const freeGA = free.filter(isGA).length;
+        // Aグループ全体を帯広・札内で均等にするため、札内側に入れるAグループの目標人数
+        const totalGA = lockedGA_A + lockedGA_B + freeGA;
+        // 差1人まで許容 → 札内に入れられるAグループ数の上限は ceil(total/2)
+        const targetGA_B = Math.ceil(totalGA / 2);
+        let gaCapB = Math.max(0, targetGA_B - lockedGA_B);          // 札内に追加できるAグループ数
+
+        const bSide = [];
+        let trUsed = 0, ocUsed = 0, gaUsedB = 0;
+        const pool = scored.map(x => x.user);
+        for (let i = pool.length - 1; i >= 0 && bSide.length < needB; i--) {
+            const u = pool[i];
+            if (u.transport_type === '送迎' && trUsed >= trCap) continue;
+            if (u.transport_type === '自車' && ocUsed >= ocCap) continue;
+            if (isGA(u) && gaUsedB >= gaCapB) continue;
+            if (u.transport_type === '送迎') trUsed++;
+            if (u.transport_type === '自車') ocUsed++;
+            if (isGA(u)) gaUsedB++;
+            bSide.push(u);
+        }
+        // Aグループ枠が原因で札内が埋まらなかった場合、Aグループ枠を1つ緩めて再度埋める（差1人まで許容）
+        if (bSide.length < needB) {
+            const bIds0 = new Set(bSide.map(u => u.id));
+            for (let i = pool.length - 1; i >= 0 && bSide.length < needB; i--) {
+                const u = pool[i];
+                if (bIds0.has(u.id)) continue;
+                if (u.transport_type === '送迎' && trUsed >= trCap) continue;
+                if (u.transport_type === '自車' && ocUsed >= ocCap) continue;
+                if (isGA(u) && gaUsedB >= gaCapB + 1) continue;
+                if (u.transport_type === '送迎') trUsed++;
+                if (u.transport_type === '自車') ocUsed++;
+                if (isGA(u)) gaUsedB++;
+                bSide.push(u); bIds0.add(u.id);
+            }
+        }
+        const bIds = new Set(bSide.map(u => u.id));
+        assignedB.push(...bSide);
+        assignedA.push(...free.filter(u => !bIds.has(u.id)));
 
         // ---- Step4: 制約調整（ロックされた人は動かさない）----
         adjustForConflictsV5(assignedA, assignedB, lockedIds, warnings);
@@ -5540,13 +5592,14 @@ function evaluatePlan(plan, activeUsers, workDates) {
     let score = 0;
     const { dailyShifts, storeCount, warnings } = plan;
 
-    // 1. 日ごとの人数比率が6:4からどれだけずれているか
+    // 1. 全体で5:5（余り帯広）からどれだけずれているか。札内超過は重く減点
     for (const dateStr of workDates) {
         const d = dailyShifts[dateStr];
         const n = d.A.length + d.B.length;
         if (n === 0) continue;
-        const ideal = n * 0.6;
-        score += Math.abs(d.A.length - ideal) * 3;
+        const idealB = Math.floor(n / 2);
+        if (d.B.length > idealB) score += (d.B.length - idealB) * 10;
+        else score += (idealB - d.B.length) * 1;
     }
 
     // 2. 各利用者の月内帯広率が目標からどれだけずれているか
@@ -5555,7 +5608,7 @@ function evaluatePlan(plan, activeUsers, workDates) {
         const total = c.A + c.B;
         if (total === 0) continue;
         const flex = Number(u.fixed_store_flexibility ?? 70);
-        let target = 0.6;
+        let target = 0.5;
         if (u.fixed_store === 'A') target = flex / 100;
         else if (u.fixed_store === 'B') target = 1 - flex / 100;
         const rate = c.A / total;
