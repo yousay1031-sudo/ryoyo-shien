@@ -5351,20 +5351,20 @@ window.fetch = async function(url, opts = {}) {
     } catch(e) { return {ok:false,status:500,json:async()=>({})}; }
 };
 </script>
-<script>// シフト自動生成ロジック v4
+<script>// シフト自動生成ロジック v5
 // 基本方針:
 // - 休み希望に登録した日 → 休み（シフトなし）
 // - 火曜日（定休日）→ シフトなし
 // - それ以外の全営業日 → 必ず帯広か札内に出勤
 //
-// 制約（優先度順）:
-// 1. 休み希望・有給は絶対に守る
-// 2. 送迎人数：札内4人以下
-// 3. 自車人数：札内2人以下
-// 4. 相性制約（同じ店舗に入れない）
-// 5. 帯広:札内 = 6:4 の比率
-// 6. 月全体で各利用者の帯広:札内比率をバランス
-// 7. 勤務時間タイプのバランス
+// v5の改善点:
+// 1. 固定店舗100%の利用者は「ロック」し、以降の調整で絶対に動かさない
+// 2. 日ごとの目標人数を「固定分を除いた残り」で6:4に計算
+// 3. 各利用者の月内帯広率を目標に近づける（偏り防止）
+// 4. 連日同じ店舗が続きすぎないよう前日の店舗も考慮
+// 5. 複数回試行し、月全体のバランススコアが最も良い案を採用
+// 6. 札内の送迎は4人まで、自車は2人まで
+// 7. Aグループは帯広・札内に均等配分（差1人以内）
 
 let generationWarnings = [];
 
@@ -5387,29 +5387,22 @@ async function autoGenerateShiftsV2(targetMonth) {
 
         const activeUsers = users.data.filter(u => u.user_type === 'user' && u.status === 'active');
 
-        // 既存シフト削除（対象月のみ、並列処理）
+        // 既存シフト削除
         const toDelete = existing.data.filter(s => s.date && s.date.startsWith(yearMonth));
-        if (toDelete.length > 0) {
-            const deleteChunks = [];
-            for (let i = 0; i < toDelete.length; i += 10) {
-                deleteChunks.push(toDelete.slice(i, i + 10));
-            }
-            for (const chunk of deleteChunks) {
-                await Promise.all(chunk.map(s => fetch(`tables/shifts/${s.id}`, { method: 'DELETE' })));
-            }
+        for (let i = 0; i < toDelete.length; i += 10) {
+            const chunk = toDelete.slice(i, i + 10);
+            await Promise.all(chunk.map(s => fetch(`tables/shifts/${s.id}`, { method: 'DELETE' })));
         }
 
         // 営業日リスト（火曜除外）
         const workDates = [];
         for (let d = 1; d <= daysInMonth; d++) {
             const dt = new Date(year, month - 1, d);
-            if (dt.getDay() !== 2) {
-                workDates.push(`${yearMonth}-${String(d).padStart(2,'0')}`);
-            }
+            if (dt.getDay() !== 2) workDates.push(`${yearMonth}-${String(d).padStart(2,'0')}`);
         }
 
-        // 各利用者の休み希望日セット
-        const leaveSet = {}; // userId -> Set<dateStr>
+        // 休み希望セット
+        const leaveSet = {};
         for (const u of activeUsers) {
             leaveSet[u.id] = new Set(
                 leaves.data
@@ -5418,78 +5411,29 @@ async function autoGenerateShiftsV2(targetMonth) {
             );
         }
 
-        // 月全体での帯広割り当て回数（バランス管理）
-        const storeCount = {};
-        for (const u of activeUsers) storeCount[u.id] = { A: 0, B: 0 };
-
-        // 各利用者の目標帯広率（固定店舗を考慮）
-        const targetARate = {};
-        for (const u of activeUsers) {
-            let rate = 0.6;
-            if (u.fixed_store === 'A') rate = (u.fixed_store_flexibility || 70) / 100;
-            else if (u.fixed_store === 'B') rate = 1 - (u.fixed_store_flexibility || 70) / 100;
-            targetARate[u.id] = rate;
+        // ===== 複数回試行して最良案を採用 =====
+        const TRIALS = 30;
+        let best = null;
+        let bestScore = Infinity;
+        for (let t = 0; t < TRIALS; t++) {
+            const plan = buildMonthPlan(activeUsers, workDates, leaveSet);
+            const score = evaluatePlan(plan, activeUsers, workDates);
+            if (score < bestScore) { bestScore = score; best = plan; }
         }
+        const dailyShifts = best.dailyShifts;
+        generationWarnings = best.warnings;
 
-        const dailyShifts = {};
-
-        for (const dateStr of workDates) {
-            // この日に出勤する利用者（休み希望がない人が全員出勤）
-            const todayWorkers = activeUsers.filter(u => !leaveSet[u.id].has(dateStr));
-
-            if (todayWorkers.length === 0) {
-                dailyShifts[dateStr] = { A: [], B: [] };
-                continue;
-            }
-
-            const assignedA = [];
-            const assignedB = [];
-
-            // 月全体バランスを見てA優先スコアを計算
-            const scored = todayWorkers.map(u => {
-                const total = storeCount[u.id].A + storeCount[u.id].B;
-                const currentRate = total > 0 ? storeCount[u.id].A / total : targetARate[u.id];
-                // 目標比率より帯広が少ないほどスコアが高い（帯広優先）
-                const score = (targetARate[u.id] - currentRate) + (Math.random() - 0.5) * 0.2;
-                return { user: u, score };
-            });
-            scored.sort((a, b) => b.score - a.score);
-
-            // 6:4を基準に分割
-            const splitA = Math.round(todayWorkers.length * 0.6);
-            assignedA.push(...scored.slice(0, splitA).map(x => x.user));
-            assignedB.push(...scored.slice(splitA).map(x => x.user));
-
-            // 制約調整（順番が重要: 相性 → 送迎 → 自車 → 勤務タイプ）
-            adjustForConflicts(assignedA, assignedB);
-            adjustForTransportLimit(assignedA, assignedB);
-            adjustForOwnCarLimit(assignedA, assignedB);
-            adjustForWorkHoursBalance(assignedA, assignedB);
-
-            dailyShifts[dateStr] = { A: assignedA, B: assignedB };
-
-            // 月全体カウントを更新
-            for (const u of assignedA) storeCount[u.id].A++;
-            for (const u of assignedB) storeCount[u.id].B++;
-        }
-
-        // 保存（並列処理で高速化）
-        let total = 0;
+        // 保存
         const allShiftsToSave = [];
         for (const dateStr in dailyShifts) {
-            for (const u of dailyShifts[dateStr].A) {
+            for (const u of dailyShifts[dateStr].A)
                 allShiftsToSave.push({ user_id: u.id, date: dateStr, store: 'A', status: 'scheduled' });
-            }
-            for (const u of dailyShifts[dateStr].B) {
+            for (const u of dailyShifts[dateStr].B)
                 allShiftsToSave.push({ user_id: u.id, date: dateStr, store: 'B', status: 'scheduled' });
-            }
         }
-        // 10件ずつ並列保存
-        const saveChunks = [];
+        let total = 0;
         for (let i = 0; i < allShiftsToSave.length; i += 10) {
-            saveChunks.push(allShiftsToSave.slice(i, i + 10));
-        }
-        for (const chunk of saveChunks) {
+            const chunk = allShiftsToSave.slice(i, i + 10);
             await Promise.all(chunk.map(shift =>
                 fetch('tables/shifts', {
                     method: 'POST',
@@ -5514,98 +5458,237 @@ async function autoGenerateShiftsV2(targetMonth) {
 }
 
 // ====================================================
-// 制約調整
+// 1ヶ月分の案を1回作る
 // ====================================================
+function buildMonthPlan(activeUsers, workDates, leaveSet) {
+    const warnings = [];
+    const dailyShifts = {};
+    const storeCount = {};   // userId -> {A, B}
+    const lastStore  = {};   // userId -> 'A' | 'B' | null（前営業日）
+    for (const u of activeUsers) { storeCount[u.id] = { A: 0, B: 0 }; lastStore[u.id] = null; }
 
-function adjustForConflicts(assignedA, assignedB) {
-    const hasConflict = (store, user) => {
-        const cf = (user.conflict_with || []).map(Number);
-        return store.some(u =>
-            cf.includes(Number(u.id)) ||
-            (u.conflict_with || []).map(Number).includes(Number(user.id))
-        );
-    };
-    let changed = true, loop = 0;
-    while (changed && loop++ < 20) {
-        changed = false;
-        for (let i = 0; i < assignedB.length; i++) {
-            const u = assignedB[i];
-            if (!(u.conflict_with || []).length) continue;
-            for (let j = i + 1; j < assignedB.length; j++) {
-                const v = assignedB[j];
-                if (!(u.conflict_with || []).map(Number).includes(Number(v.id))) continue;
-                if (!hasConflict(assignedA, v)) {
-                    assignedB.splice(j, 1); assignedA.push(v); changed = true; j--;
-                } else if (!hasConflict(assignedA, u)) {
-                    assignedB.splice(i, 1); assignedA.push(u); changed = true; i--; break;
-                }
-            }
-        }
-        for (let i = 0; i < assignedA.length; i++) {
-            const u = assignedA[i];
-            if (!(u.conflict_with || []).length) continue;
-            for (let j = i + 1; j < assignedA.length; j++) {
-                const v = assignedA[j];
-                if (!(u.conflict_with || []).map(Number).includes(Number(v.id))) continue;
-                if (!hasConflict(assignedB, v)) {
-                    assignedA.splice(j, 1); assignedB.push(v); changed = true; j--;
-                } else if (!hasConflict(assignedB, u)) {
-                    assignedA.splice(i, 1); assignedB.push(u); changed = true; i--; break;
-                }
-            }
-        }
+    // 各利用者の「目標帯広率」と「ロック状態」
+    const targetARate = {};
+    const isLocked    = {};   // 100%固定の人 → true
+    for (const u of activeUsers) {
+        const flex = Number(u.fixed_store_flexibility ?? 70);
+        if (u.fixed_store === 'A')       { targetARate[u.id] = flex / 100;     isLocked[u.id] = flex >= 100; }
+        else if (u.fixed_store === 'B')  { targetARate[u.id] = 1 - flex / 100; isLocked[u.id] = flex >= 100; }
+        else                             { targetARate[u.id] = 0.6;            isLocked[u.id] = false; }
     }
+
+    for (const dateStr of workDates) {
+        const todayWorkers = activeUsers.filter(u => !leaveSet[u.id].has(dateStr));
+        if (todayWorkers.length === 0) { dailyShifts[dateStr] = { A: [], B: [] }; continue; }
+
+        const assignedA = [];
+        const assignedB = [];
+        const lockedIds = new Set();
+
+        // ---- Step1: 100%固定の人を先にロック配置 ----
+        for (const u of todayWorkers) {
+            if (isLocked[u.id]) {
+                (u.fixed_store === 'A' ? assignedA : assignedB).push(u);
+                lockedIds.add(u.id);
+            }
+        }
+
+        // ---- Step2: 残りの人数を目標比率で決める ----
+        const free = todayWorkers.filter(u => !lockedIds.has(u.id));
+        const totalA = Math.round(todayWorkers.length * 0.6);
+        let needA = Math.max(0, totalA - assignedA.length);
+        needA = Math.min(needA, free.length);
+
+        // ---- Step3: 各人の「帯広に行くべき度」スコア ----
+        const scored = free.map(u => {
+            const total = storeCount[u.id].A + storeCount[u.id].B;
+            const currentRate = total > 0 ? storeCount[u.id].A / total : targetARate[u.id];
+            // 目標比率より帯広が少ない → 帯広優先（大きい値）
+            // 目標比率からのズレを最優先（固定店舗ありの人は重みを強く）
+            const w = u.fixed_store ? 25 : 10;
+            let score = (targetARate[u.id] - currentRate) * w;
+            // 連日同じ店舗を避ける（昨日Aなら今日はBへ）
+            if (lastStore[u.id] === 'A') score -= 1.5;
+            if (lastStore[u.id] === 'B') score += 1.5;
+            score += (Math.random() - 0.5) * 0.8;
+            return { user: u, score };
+        });
+        scored.sort((a, b) => b.score - a.score);
+
+        assignedA.push(...scored.slice(0, needA).map(x => x.user));
+        assignedB.push(...scored.slice(needA).map(x => x.user));
+
+        // ---- Step4: 制約調整（ロックされた人は動かさない）----
+        adjustForConflictsV5(assignedA, assignedB, lockedIds, warnings);
+        adjustForGroupABalanceV5(assignedA, assignedB, lockedIds, warnings);
+        adjustForTransportLimitV5(assignedA, assignedB, lockedIds, warnings);
+        adjustForOwnCarLimitV5(assignedA, assignedB, lockedIds, warnings);
+        adjustForWorkHoursBalanceV5(assignedA, assignedB, lockedIds);
+
+        dailyShifts[dateStr] = { A: assignedA, B: assignedB };
+        for (const u of assignedA) { storeCount[u.id].A++; lastStore[u.id] = 'A'; }
+        for (const u of assignedB) { storeCount[u.id].B++; lastStore[u.id] = 'B'; }
+    }
+
+    return { dailyShifts, warnings, storeCount };
 }
 
-function adjustForTransportLimit(assignedA, assignedB) {
+// ====================================================
+// 案の評価（小さいほど良い）
+// ====================================================
+function evaluatePlan(plan, activeUsers, workDates) {
+    let score = 0;
+    const { dailyShifts, storeCount, warnings } = plan;
+
+    // 1. 日ごとの人数比率が6:4からどれだけずれているか
+    for (const dateStr of workDates) {
+        const d = dailyShifts[dateStr];
+        const n = d.A.length + d.B.length;
+        if (n === 0) continue;
+        const ideal = n * 0.6;
+        score += Math.abs(d.A.length - ideal) * 3;
+    }
+
+    // 2. 各利用者の月内帯広率が目標からどれだけずれているか
+    for (const u of activeUsers) {
+        const c = storeCount[u.id];
+        const total = c.A + c.B;
+        if (total === 0) continue;
+        const flex = Number(u.fixed_store_flexibility ?? 70);
+        let target = 0.6;
+        if (u.fixed_store === 'A') target = flex / 100;
+        else if (u.fixed_store === 'B') target = 1 - flex / 100;
+        const rate = c.A / total;
+        // 固定店舗の人は違反を重く罰する
+        const weight = u.fixed_store ? 20 : 8;
+        score += Math.abs(rate - target) * weight;
+    }
+
+    // 3. 連続同店舗（4日以上）のペナルティ
+    for (const u of activeUsers) {
+        let run = 0, last = null;
+        for (const dateStr of workDates) {
+            const d = dailyShifts[dateStr];
+            const s = d.A.some(x => x.id === u.id) ? 'A' : d.B.some(x => x.id === u.id) ? 'B' : null;
+            if (s && s === last) { run++; if (run >= 4) score += 1; } else { run = 1; }
+            last = s;
+        }
+    }
+
+    // 4. Aグループの日別偏り（差が2人以上でペナルティ）
+    for (const dateStr of workDates) {
+        const d = dailyShifts[dateStr];
+        const ga = d.A.filter(u => u.management_group === 'A').length;
+        const gb = d.B.filter(u => u.management_group === 'A').length;
+        const diff = Math.abs(ga - gb);
+        if (diff >= 2) score += (diff - 1) * 6;
+        // 送迎・自車の超過も重く
+        const tr = d.B.filter(u => u.transport_type === '送迎').length;
+        const oc = d.B.filter(u => u.transport_type === '自車').length;
+        if (tr > 4) score += (tr - 4) * 15;
+        if (oc > 2) score += (oc - 2) * 15;
+    }
+
+    // 5. 警告1件につきペナルティ
+    score += warnings.length * 5;
+    return score;
+}
+
+// ====================================================
+// 制約調整（ロック対応版）
+// ====================================================
+function adjustForConflictsV5(assignedA, assignedB, lockedIds, warnings) {
+    const conflicts = (u, store) => {
+        const cf = (u.conflict_with || []).map(Number);
+        return store.some(v => cf.includes(Number(v.id)) ||
+            (v.conflict_with || []).map(Number).includes(Number(u.id)));
+    };
+    const tryFix = (from, to) => {
+        for (let i = 0; i < from.length; i++) {
+            const u = from[i];
+            if (lockedIds.has(u.id)) continue;
+            if (!conflicts(u, from.filter(x => x !== u))) continue;
+            if (!conflicts(u, to)) {
+                from.splice(i, 1); to.push(u); return true;
+            }
+        }
+        return false;
+    };
+    let loop = 0;
+    while (loop++ < 20) {
+        if (!tryFix(assignedA, assignedB) && !tryFix(assignedB, assignedA)) break;
+    }
+    // 残った衝突を警告
+    const stillA = assignedA.some(u => conflicts(u, assignedA.filter(x => x !== u)));
+    const stillB = assignedB.some(u => conflicts(u, assignedB.filter(x => x !== u)));
+    if (stillA || stillB) warnings.push('一部の日で相性の悪いメンバーが同じ店舗になっています');
+}
+
+// Aグループを帯広・札内に均等配分（差1人以内）
+function adjustForGroupABalanceV5(assignedA, assignedB, lockedIds, warnings) {
+    const isA = u => u.management_group === 'A';
+    let loop = 0;
+    while (loop++ < 20) {
+        const ga = assignedA.filter(isA).length;
+        const gb = assignedB.filter(isA).length;
+        if (Math.abs(ga - gb) <= 1) break;
+        // 多い方から少ない方へ、Aグループの人と非Aグループの人を入れ替える
+        const from = ga > gb ? assignedA : assignedB;
+        const to   = ga > gb ? assignedB : assignedA;
+        const mover = from.find(u => isA(u) && !lockedIds.has(u.id));
+        const back  = to.find(u => !isA(u) && !lockedIds.has(u.id));
+        if (!mover) break;
+        from.splice(from.indexOf(mover), 1); to.push(mover);
+        if (back) { to.splice(to.indexOf(back), 1); from.push(back); }
+    }
+    const ga = assignedA.filter(isA).length, gb = assignedB.filter(isA).length;
+    if (Math.abs(ga - gb) > 1) warnings.push('一部の日でAグループの配分が偏っています');
+}
+
+// 札内の送迎は4人まで
+function adjustForTransportLimitV5(assignedA, assignedB, lockedIds, warnings) {
     const MAX = 4;
     let loop = 0;
     while (assignedB.filter(u => u.transport_type === '送迎').length > MAX && loop++ < 30) {
-        const excess = assignedB.find(u => u.transport_type === '送迎' && u.fixed_store !== 'B');
+        const excess = assignedB.find(u => u.transport_type === '送迎' && !lockedIds.has(u.id));
         if (!excess) break;
-        const swap = assignedA.find(u => u.transport_type !== '送迎' && u.fixed_store !== 'A');
-        if (swap) {
-            assignedA.splice(assignedA.indexOf(swap), 1);
-            assignedB.splice(assignedB.indexOf(excess), 1);
-            assignedA.push(excess); assignedB.push(swap);
-        } else {
-            assignedB.splice(assignedB.indexOf(excess), 1);
-            assignedA.push(excess);
-        }
+        // 入れ替え相手はAグループ均衡を崩さないよう同グループ優先
+        const swap = assignedA.find(u => u.transport_type !== '送迎' && !lockedIds.has(u.id)
+                        && u.management_group === excess.management_group)
+                  || assignedA.find(u => u.transport_type !== '送迎' && !lockedIds.has(u.id));
+        assignedB.splice(assignedB.indexOf(excess), 1);
+        assignedA.push(excess);
+        if (swap) { assignedA.splice(assignedA.indexOf(swap), 1); assignedB.push(swap); }
     }
     if (assignedB.filter(u => u.transport_type === '送迎').length > MAX)
-        generationWarnings.push('一部の日で札内店の送迎人数が上限（4人）を超えています');
+        warnings.push('一部の日で札内店の送迎人数が上限（4人）を超えています');
 }
 
-function adjustForOwnCarLimit(assignedA, assignedB) {
+function adjustForOwnCarLimitV5(assignedA, assignedB, lockedIds, warnings) {
     const MAX = 2;
     let loop = 0;
     while (assignedB.filter(u => u.transport_type === '自車').length > MAX && loop++ < 30) {
-        const excess = assignedB.find(u => u.transport_type === '自車' && u.fixed_store !== 'B');
+        const excess = assignedB.find(u => u.transport_type === '自車' && !lockedIds.has(u.id));
         if (!excess) break;
-        const swap = assignedA.find(u => u.transport_type !== '自車' && u.fixed_store !== 'A');
-        if (swap) {
-            assignedA.splice(assignedA.indexOf(swap), 1);
-            assignedB.splice(assignedB.indexOf(excess), 1);
-            assignedA.push(excess); assignedB.push(swap);
-        } else {
-            assignedB.splice(assignedB.indexOf(excess), 1);
-            assignedA.push(excess);
-        }
+        const swap = assignedA.find(u => u.transport_type !== '自車' && !lockedIds.has(u.id)
+                        && u.management_group === excess.management_group)
+                  || assignedA.find(u => u.transport_type !== '自車' && !lockedIds.has(u.id));
+        assignedB.splice(assignedB.indexOf(excess), 1);
+        assignedA.push(excess);
+        if (swap) { assignedA.splice(assignedA.indexOf(swap), 1); assignedB.push(swap); }
     }
     if (assignedB.filter(u => u.transport_type === '自車').length > MAX)
-        generationWarnings.push('一部の日で札内店の自車人数が上限（2人）を超えています');
+        warnings.push('一部の日で札内店の自車人数が上限（2人）を超えています');
 }
 
-function adjustForWorkHoursBalance(assignedA, assignedB) {
-    const ratio = s => s.length > 0
-        ? s.filter(u => u.work_hours_type === 'short').length / s.length : 0;
+function adjustForWorkHoursBalanceV5(assignedA, assignedB, lockedIds) {
+    const ratio = s => s.length > 0 ? s.filter(u => u.work_hours_type === 'short').length / s.length : 0;
     if (Math.abs(ratio(assignedA) - ratio(assignedB)) < 0.3) return;
     const fromIsA = ratio(assignedA) > ratio(assignedB);
     const from = fromIsA ? assignedA : assignedB;
     const to   = fromIsA ? assignedB : assignedA;
-    const shortUser = from.find(u => u.work_hours_type === 'short' && !u.fixed_store);
-    const normUser  = to.find(u => u.work_hours_type !== 'short' && !u.fixed_store);
+    const shortUser = from.find(u => u.work_hours_type === 'short' && !lockedIds.has(u.id));
+    const normUser  = to.find(u => u.work_hours_type !== 'short' && !lockedIds.has(u.id));
     if (shortUser && normUser) {
         from.splice(from.indexOf(shortUser), 1);
         to.splice(to.indexOf(normUser), 1);
@@ -5614,11 +5697,16 @@ function adjustForWorkHoursBalance(assignedA, assignedB) {
 }
 
 // 後方互換ダミー
+function adjustForConflicts() {}
+function adjustForTransportLimit() {}
+function adjustForOwnCarLimit() {}
+function adjustForWorkHoursBalance() {}
 function getWorkDates() {}
 function calculateUserAvailability() {}
 function generateDailyShifts() {}
 function assignWorkersToStores() {}
 function saveDailyShifts() {}
+
 </script>
 <script>// 指導員シフト管理機能（ポップオーバーUI版）
 
